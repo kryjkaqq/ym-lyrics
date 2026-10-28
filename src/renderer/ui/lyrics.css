@@ -1,0 +1,1314 @@
+/* ym-lyrics — полноэкранный режим текста.
+   Вся тема строится из палитры обложки (palette.js) через переменные --yl-*;
+   зарегистрированные цвета плавно перетекают при смене трека. */
+
+@font-face {
+  font-family: 'YL Text';
+  src: url('/fonts/YSText-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'YL Text';
+  src: url('/fonts/YSText-Medium.woff2') format('woff2');
+  font-weight: 500;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'YL Text';
+  src: url('/fonts/YSText-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'YL Text';
+  src: url('/fonts/YSText-Heavy.woff2') format('woff2');
+  font-weight: 800;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'YL Text';
+  src: url('/fonts/YSText-Black.woff2') format('woff2');
+  font-weight: 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'YL Headline';
+  src: url('/fonts/YSMusic-HeadlineBold.woff2') format('woff2');
+  font-weight: 700;
+  font-display: swap;
+}
+
+@property --yl-accent { syntax: '<color>'; inherits: true; initial-value: #ffcc4d; }
+@property --yl-accent2 { syntax: '<color>'; inherits: true; initial-value: #ff6a3d; }
+@property --yl-base { syntax: '<color>'; inherits: true; initial-value: #120f1a; }
+@property --yl-base-deep { syntax: '<color>'; inherits: true; initial-value: #09070d; }
+@property --yl-ink { syntax: '<color>'; inherits: true; initial-value: #fff8ec; }
+@property --yl-dim { syntax: '<color>'; inherits: true; initial-value: rgba(255, 255, 255, 0.34); }
+@property --yl-soft { syntax: '<color>'; inherits: true; initial-value: rgba(255, 255, 255, 0.62); }
+@property --yl-glow { syntax: '<color>'; inherits: true; initial-value: rgba(255, 204, 77, 0.55); }
+@property --yl-on-ink { syntax: '<color>'; inherits: true; initial-value: #120f1a; }
+
+.yl-root {
+  --yl-size: 46px;
+  --yl-line-size: var(--yl-size);
+  --yl-pulse: 0; /* свечение в бит, мягкое */
+  --yl-punch: 0; /* короткий толчок от удара — для лёгкого шейка */
+  --yl-bass: 0;
+  --yl-energy: 0;
+  --yl-side: min(30vw, 50vh);
+  --yl-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --yl-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --yl-font: 'YL Text', 'YS Text', Inter, 'Segoe UI', system-ui, sans-serif;
+  --yl-surface: color-mix(in srgb, var(--yl-base) 62%, transparent);
+  --yl-hairline: color-mix(in srgb, var(--yl-ink) 12%, transparent);
+
+  position: fixed;
+  inset: 0;
+  z-index: 2147483000;
+  overflow: hidden;
+  color: var(--yl-ink);
+  background: var(--yl-base-deep);
+  font-family: var(--yl-font);
+  font-feature-settings: 'kern', 'liga';
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  -webkit-app-region: no-drag;
+  opacity: 0;
+  transform: scale(1.025);
+  filter: blur(6px);
+  pointer-events: none;
+  /* закрытый режим полностью убирается из отрисовки — после того как доиграет исчезновение */
+  visibility: hidden;
+  transition: opacity 0.5s var(--yl-ease-out), transform 0.7s var(--yl-ease-out), filter 0.5s var(--yl-ease-out),
+    --yl-accent 1.4s ease, --yl-accent2 1.4s ease, --yl-base 1.4s ease, --yl-base-deep 1.4s ease, --yl-ink 1.4s ease,
+    --yl-dim 1.4s ease, --yl-soft 1.4s ease, --yl-glow 1.4s ease, --yl-on-ink 1.4s ease, visibility 0s linear 0.7s;
+}
+.yl-root.is-open {
+  opacity: 1;
+  transform: none;
+  filter: none;
+  pointer-events: auto;
+  visibility: visible;
+  transition: opacity 0.5s var(--yl-ease-out), transform 0.7s var(--yl-ease-out), filter 0.5s var(--yl-ease-out),
+    --yl-accent 1.4s ease, --yl-accent2 1.4s ease, --yl-base 1.4s ease, --yl-base-deep 1.4s ease, --yl-ink 1.4s ease,
+    --yl-dim 1.4s ease, --yl-soft 1.4s ease, --yl-glow 1.4s ease, --yl-on-ink 1.4s ease, visibility 0s;
+}
+/* пока режим закрыт, ничто внутри него не должно перехватывать мышь и тратить кадры на анимации */
+.yl-root:not(.is-open),
+.yl-root:not(.is-open) * {
+  pointer-events: none !important;
+  animation-play-state: paused !important;
+}
+.yl-root ::selection {
+  background: color-mix(in srgb, var(--yl-accent) 45%, transparent);
+  color: var(--yl-ink);
+}
+.yl-root :focus-visible {
+  outline: 2px solid var(--yl-accent);
+  outline-offset: 3px;
+}
+.yl-root button {
+  font: inherit;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ---------------- фон ---------------- */
+.yl-bg {
+  position: absolute;
+  inset: -18%;
+  --yl-energy: 0;
+  will-change: transform;
+}
+.yl-root.no-bg .yl-bg-stack {
+  opacity: 0 !important;
+}
+.yl-bg-stack {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 1.6s ease;
+}
+.yl-bg-stack.is-current {
+  opacity: 1;
+}
+/* старая обложка после растворения не рисуется и не анимируется */
+.yl-bg-stack:not(.is-current) {
+  visibility: hidden;
+  transition: opacity 1.6s ease, visibility 0s linear 1.6s;
+}
+.yl-bg-stack:not(.is-current) .yl-bg-layer {
+  animation-play-state: paused;
+}
+/* фон рисуется маленьким и растягивается: размытие 28px × 3.4 ≈ 96px, а пикселей для видеокарты в ~10 раз меньше */
+.yl-bg-layer {
+  position: absolute;
+  inset: 35%;
+  background-size: cover;
+  background-position: center;
+  filter: blur(28px) saturate(1.6) brightness(0.7);
+  transform: scale(3.4);
+  will-change: transform;
+}
+.yl-bg-layer.a {
+  animation: yl-spin 70s linear infinite;
+}
+.yl-bg-layer.b {
+  inset: 39.4%;
+  border-radius: 50%;
+  opacity: calc(0.3 + var(--yl-energy) * 0.35);
+  animation: yl-spin 48s linear infinite reverse, yl-breathe 11s ease-in-out infinite;
+}
+.yl-root.is-mono .yl-bg-layer {
+  filter: blur(28px) saturate(0.2) brightness(0.55);
+}
+.yl-bg-tint {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(110% 80% at 18% 8%, color-mix(in srgb, var(--yl-accent) 26%, transparent), transparent 62%),
+    radial-gradient(90% 75% at 92% 100%, color-mix(in srgb, var(--yl-accent2) 28%, transparent), transparent 66%),
+    linear-gradient(180deg, color-mix(in srgb, var(--yl-base) 35%, transparent), color-mix(in srgb, var(--yl-base-deep) 78%, transparent));
+}
+.yl-bg-tint::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: var(--yl-bg-dim, 0);
+  transition: opacity 0.4s;
+}
+.yl-bg-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(60% 50% at 50% 55%, color-mix(in srgb, var(--yl-accent) 40%, transparent), transparent 70%);
+  opacity: 0;
+  will-change: opacity;
+}
+.yl-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.045;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.yl-viz {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+}
+@keyframes yl-spin {
+  from {
+    transform: scale(3.4) rotate(0deg);
+  }
+  to {
+    transform: scale(3.4) rotate(360deg);
+  }
+}
+@keyframes yl-breathe {
+  0%,
+  100% {
+    scale: 1;
+  }
+  50% {
+    scale: 1.14;
+  }
+}
+
+/* ---------------- шапка ---------------- */
+.yl-head {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 24px 32px;
+  pointer-events: none;
+}
+.yl-head > * {
+  pointer-events: auto;
+}
+.yl-cover {
+  flex: none;
+  will-change: transform;
+  width: 56px;
+  height: 56px;
+  border-radius: 10px;
+  background: var(--yl-base) center/cover;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+}
+.yl-meta {
+  flex: 1;
+  min-width: 0;
+}
+.yl-title,
+.yl-artist {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.yl-title {
+  font-size: 18px;
+  font-weight: 700;
+}
+.yl-artist {
+  margin-top: 3px;
+  font-size: 14px;
+  color: var(--yl-soft);
+}
+.yl-btn {
+  flex: none;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--yl-ink);
+  background: color-mix(in srgb, var(--yl-ink) 9%, transparent);
+  cursor: pointer;
+  transition: background 0.2s, transform 0.25s var(--yl-ease);
+}
+.yl-btn:hover,
+.yl-btn.is-on {
+  background: color-mix(in srgb, var(--yl-ink) 18%, transparent);
+}
+.yl-btn:active {
+  transform: scale(0.9);
+}
+.yl-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* ---------------- строки ---------------- */
+.yl-stage {
+  position: absolute;
+  z-index: 2;
+  /* на ударе текст чуть вздрагивает (transform задаётся из JS) */
+  will-change: transform;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 176px;
+  overflow: hidden;
+  mask-image: linear-gradient(180deg, transparent 0, #000 20%, #000 82%, transparent 100%);
+}
+.yl-lines {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  padding: 0 max(40px, 8vw);
+  will-change: transform;
+}
+.yl-line {
+  --i: 0;
+  max-width: min(1100px, 100%);
+  padding: calc(var(--yl-line-size) * 0.26) 0;
+  font-size: var(--yl-line-size);
+  font-weight: 800;
+  line-height: 1.16;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+  color: var(--yl-dim);
+  transform-origin: 0 50%;
+  transform: scale(0.88);
+  opacity: 0.5;
+  cursor: pointer;
+  /* filter не анимируем: плавный переход размытия перерисовывал бы строки каждый кадр */
+  transition: transform 0.75s var(--yl-ease), opacity 0.6s, color 0.6s;
+}
+.yl-root.blur-inactive .yl-line[data-d='1'] {
+  filter: blur(1.2px);
+}
+.yl-root.blur-inactive .yl-line[data-d='2'] {
+  filter: blur(2.4px);
+}
+.yl-root.blur-inactive .yl-line[data-d='3'] {
+  filter: blur(3.6px);
+}
+.yl-line:hover {
+  opacity: 0.85;
+  filter: none !important;
+}
+.yl-line.is-past {
+  opacity: 0.42;
+}
+.yl-line.is-active {
+  transform: none;
+  opacity: 1;
+  /* без filter: тень пересчитывалась бы каждый кадр вместе с заливкой слов (свечение даёт канвас) */
+  /* свой слой: заливка слов каждый кадр не перерисовывает соседние (размытые) строки */
+  will-change: transform, scale;
+  transition: transform 0.75s var(--yl-ease), opacity 0.6s, color 0.6s;
+}
+/* появление строк волной, когда текст загрузился */
+.yl-lines.is-entering .yl-line {
+  animation: yl-line-in 0.9s var(--yl-ease-out) both;
+  animation-delay: calc(min(var(--i), 14) * 45ms);
+}
+@keyframes yl-line-in {
+  from {
+    opacity: 0;
+    translate: 0 18px;
+    filter: blur(10px);
+  }
+}
+.yl-unsynced .yl-line {
+  transform: none;
+  opacity: 0.9;
+  color: var(--yl-ink);
+  filter: none !important;
+  cursor: default;
+}
+.yl-w {
+  --p: 0;
+  display: inline-block;
+  white-space: pre;
+  transition: transform 0.5s var(--yl-ease), color 0.35s, text-shadow 0.6s, opacity 0.4s, filter 0.4s;
+}
+
+/* Заливка: слово заливается слева направо по своему таймингу, кромка окрашена акцентом */
+.st-fill .yl-line.is-active .yl-w {
+  color: transparent;
+  background-image: linear-gradient(90deg, var(--yl-ink) 0 38%, var(--yl-accent) 46%, var(--yl-dim) 56% 100%);
+  background-size: 230% 100%;
+  background-position: calc((1 - var(--p)) * 100%) 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  transform: translateY(calc(var(--p) * -0.06em));
+}
+.st-fill .yl-line.is-past .yl-w {
+  color: var(--yl-soft);
+}
+
+/* Прыжок: слово подпрыгивает в момент начала */
+.st-bounce .yl-line.is-active .yl-w {
+  color: var(--yl-dim);
+}
+.st-bounce .yl-line.is-active .yl-w.is-on,
+.st-bounce .yl-line.is-active .yl-w.is-done {
+  color: var(--yl-ink);
+}
+.st-bounce .yl-line.is-active .yl-w.is-on {
+  animation: yl-bounce 0.55s var(--yl-ease);
+  text-shadow: 0 0 24px var(--yl-glow);
+}
+@keyframes yl-bounce {
+  35% {
+    transform: translateY(-0.2em) scale(1.08);
+  }
+  70% {
+    transform: translateY(0.03em) scale(0.99);
+  }
+}
+
+/* Свечение: активное слово светится цветами обложки, спетые остывают */
+.st-glow .yl-line.is-active .yl-w {
+  color: var(--yl-dim);
+}
+.st-glow .yl-line.is-active .yl-w.is-on {
+  color: var(--yl-ink);
+  transform: scale(1.06);
+  text-shadow: 0 0 10px var(--yl-ink), 0 0 28px var(--yl-accent), 0 0 64px var(--yl-accent2);
+}
+.st-glow .yl-line.is-active .yl-w.is-done {
+  color: var(--yl-ink);
+  text-shadow: 0 0 18px var(--yl-glow);
+  transition-duration: 0.5s, 0.5s, 1.6s;
+}
+
+/* Появление: слова проявляются из размытия по мере исполнения */
+.st-typewriter .yl-line.is-active .yl-w {
+  opacity: 0;
+  filter: blur(8px);
+  transform: translateY(0.25em) scale(0.96);
+}
+.st-typewriter .yl-line.is-active .yl-w.is-on,
+.st-typewriter .yl-line.is-active .yl-w.is-done {
+  opacity: 1;
+  filter: none;
+  transform: none;
+  color: var(--yl-ink);
+}
+
+/* ---------------- проигрыш ---------------- */
+.yl-interlude {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--yl-line-size) * 0.22);
+  height: 0;
+  padding: 0;
+  opacity: 0;
+  transition: opacity 0.5s, height 0.6s var(--yl-ease), padding 0.6s var(--yl-ease);
+}
+.yl-interlude.is-active {
+  height: calc(var(--yl-line-size) * 0.5);
+  padding: calc(var(--yl-line-size) * 0.4) 0;
+  opacity: 1;
+}
+.yl-dot {
+  --p: 0;
+  width: calc(var(--yl-line-size) * 0.24);
+  height: calc(var(--yl-line-size) * 0.24);
+  border-radius: 50%;
+  background: var(--yl-ink);
+  opacity: calc(0.25 + var(--p) * 0.75);
+  transform: scale(calc(0.7 + var(--p) * 0.4));
+  box-shadow: 0 0 calc(var(--p) * 18px) var(--yl-glow);
+}
+
+/* ---------------- статусы ---------------- */
+.yl-status {
+  position: absolute;
+  z-index: 2;
+  inset: 0 0 176px;
+  display: grid;
+  place-items: center;
+  padding: 0 32px;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.4s;
+  /* слой лежит поверх строк — клики должны проходить к ним насквозь */
+  pointer-events: none;
+}
+.yl-status.is-visible {
+  opacity: 1;
+}
+.yl-status.is-visible button {
+  pointer-events: auto;
+}
+.yl-status-title {
+  font-family: 'YL Headline', var(--yl-font);
+  font-size: clamp(26px, 3vw, 36px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  text-wrap: balance;
+}
+.yl-status-icon {
+  display: block;
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 18px;
+  color: var(--yl-accent);
+}
+.yl-status-text {
+  max-width: 40ch;
+  margin: 10px auto 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--yl-soft);
+  text-wrap: pretty;
+}
+.yl-status-btn {
+  margin-top: 24px;
+  height: 44px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--yl-on-ink);
+  background: var(--yl-ink);
+  cursor: pointer;
+  transition: transform 0.25s var(--yl-ease), box-shadow 0.3s;
+}
+.yl-status-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--yl-accent) 35%, transparent);
+}
+.yl-status-btn:active {
+  transform: scale(0.96);
+}
+.yl-loader {
+  display: inline-flex;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.yl-loader i {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--yl-ink);
+  animation: yl-load 1.1s ease-in-out infinite;
+}
+.yl-loader i:nth-child(2) {
+  animation-delay: 0.14s;
+}
+.yl-loader i:nth-child(3) {
+  animation-delay: 0.28s;
+}
+@keyframes yl-load {
+  0%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  50% {
+    opacity: 1;
+    transform: translateY(-8px);
+  }
+}
+
+/* ---------------- обложка сбоку ---------------- */
+.yl-side {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  right: 8vw;
+  width: var(--yl-side);
+  display: none;
+  text-align: center;
+  transform: translateY(-58%);
+  transition: right 0.8s var(--yl-ease), width 0.8s var(--yl-ease), transform 0.8s var(--yl-ease);
+}
+.yl-side-cover {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 26px;
+  position: relative;
+  background: var(--yl-base) center/cover;
+  box-shadow: 0 36px 80px -10px rgba(0, 0, 0, 0.6), 0 0 30px color-mix(in srgb, var(--yl-accent) 20%, transparent);
+  will-change: transform;
+}
+/* свечение в бит — отдельный слой со статичной тенью, меняется только его прозрачность (без перерисовки) */
+.yl-side-glow {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 0 90px 10px color-mix(in srgb, var(--yl-accent) 55%, transparent);
+  opacity: 0;
+  will-change: opacity;
+  pointer-events: none;
+}
+.yl-side-cover.is-swapping {
+  animation: yl-cover-in 0.8s var(--yl-ease-out);
+}
+@keyframes yl-cover-in {
+  from {
+    opacity: 0;
+    filter: blur(14px);
+    scale: 0.94;
+  }
+}
+.yl-side-title {
+  margin-top: 32px;
+  font-family: 'YL Headline', var(--yl-font);
+  font-size: clamp(22px, 2vw, 30px);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-wrap: balance;
+}
+.yl-side-artist {
+  margin-top: 8px;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--yl-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@media (min-width: 1000px) {
+  .layout-split .yl-side {
+    display: block;
+  }
+  .layout-split .yl-lines {
+    padding-left: 6vw;
+    padding-right: calc(var(--yl-side) + 14vw);
+  }
+  .layout-split {
+    /* колонка уже — крупный размер переносит каждую строку, ограничиваем по ширине окна */
+    --yl-line-size: min(var(--yl-size), 3.3vw);
+  }
+  /* статусы — по центру колонки текста, а не всего экрана */
+  .layout-split .yl-status {
+    left: 6vw;
+    right: calc(var(--yl-side) + 14vw);
+  }
+  .layout-split .yl-head .yl-cover,
+  .layout-split .yl-head .yl-meta {
+    visibility: hidden;
+  }
+}
+
+/* ---------------- по центру ---------------- */
+.layout-center .yl-lines {
+  text-align: center;
+}
+.layout-center .yl-line {
+  margin: 0 auto;
+  transform-origin: 50% 50%;
+}
+.layout-center .yl-interlude {
+  justify-content: center;
+}
+
+/* ---------------- нижний блок: плеер ---------------- */
+/* плашка без backdrop-filter: размытие под ней пересчитывалось бы каждый кадр из-за живого фона */
+.yl-foot {
+  position: absolute;
+  z-index: 3;
+  left: 50%;
+  bottom: 22px;
+  width: min(640px, calc(100% - 48px));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transform: translateX(-50%);
+  font-size: 12px;
+  color: var(--yl-soft);
+}
+.yl-dock {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 4px;
+}
+.yl-controls {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto 1fr;
+  align-items: center;
+  gap: 14px;
+}
+.yl-controls > :first-child {
+  justify-self: start;
+}
+.yl-controls > :last-child {
+  justify-self: end;
+}
+.yl-ctl {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--yl-ink);
+  background: transparent;
+  cursor: pointer;
+  transition: transform 0.25s var(--yl-ease), background 0.2s, color 0.2s, opacity 0.2s;
+}
+.yl-ctl:hover {
+  background: color-mix(in srgb, var(--yl-ink) 10%, transparent);
+}
+.yl-ctl:active {
+  transform: scale(0.86);
+}
+.yl-ctl:disabled,
+.yl-ctl.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+.yl-ctl svg {
+  width: 22px;
+  height: 22px;
+}
+.yl-ctl-main {
+  width: 60px;
+  height: 60px;
+  color: var(--yl-on-ink);
+  background: radial-gradient(120% 120% at 30% 20%, var(--yl-ink), color-mix(in srgb, var(--yl-ink) 82%, var(--yl-accent)));
+  box-shadow: 0 14px 34px -10px color-mix(in srgb, var(--yl-accent) 55%, rgba(0, 0, 0, 0.6)), inset 0 -2px 0 rgba(0, 0, 0, 0.12);
+  will-change: transform;
+}
+.yl-ctl-main:hover {
+  background: radial-gradient(120% 120% at 30% 20%, var(--yl-ink), color-mix(in srgb, var(--yl-ink) 74%, var(--yl-accent)));
+  box-shadow: 0 16px 40px -8px color-mix(in srgb, var(--yl-accent) 70%, rgba(0, 0, 0, 0.6)), inset 0 -2px 0 rgba(0, 0, 0, 0.12);
+}
+.yl-ctl-main svg {
+  width: 26px;
+  height: 26px;
+}
+/* лайк / дизлайк */
+.yl-like svg {
+  width: 25px;
+  height: 25px;
+}
+.yl-like.is-on {
+  color: var(--yl-accent);
+}
+.yl-like.is-on svg {
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--yl-accent) 60%, transparent));
+}
+.yl-like.is-pop svg {
+  animation: yl-heart 0.55s var(--yl-ease);
+}
+@keyframes yl-heart {
+  0% {
+    scale: 1;
+  }
+  25% {
+    scale: 0.7;
+  }
+  60% {
+    scale: 1.28;
+  }
+  100% {
+    scale: 1;
+  }
+}
+.yl-like i {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin: -2.5px;
+  border-radius: 50%;
+  background: var(--yl-accent);
+  opacity: 0;
+  pointer-events: none;
+}
+.yl-like.is-pop i {
+  animation: yl-burst 0.6s var(--yl-ease-out) forwards;
+}
+@keyframes yl-burst {
+  0% {
+    opacity: 1;
+    transform: rotate(var(--a)) translateY(0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: rotate(var(--a)) translateY(-26px) scale(0.3);
+  }
+}
+.yl-dislike.is-on {
+  color: var(--yl-accent2);
+}
+
+/* полоса проигрывания */
+.yl-bar {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.yl-time {
+  min-width: 38px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--yl-soft);
+}
+.yl-progress {
+  --h: 5px;
+  position: relative;
+  flex: 1;
+  height: 22px;
+  cursor: pointer;
+  touch-action: none;
+}
+.yl-progress::before,
+.yl-progress i,
+.yl-progress u {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: var(--h);
+  margin-top: calc(var(--h) / -2);
+  border-radius: var(--h);
+  transition: height 0.2s var(--yl-ease), margin 0.2s var(--yl-ease);
+}
+.yl-progress::before {
+  background: color-mix(in srgb, var(--yl-ink) 16%, transparent);
+}
+/* предпросмотр позиции под курсором */
+.yl-progress u {
+  display: block;
+  background: color-mix(in srgb, var(--yl-ink) 14%, transparent);
+  transform-origin: 0 50%;
+  transform: scaleX(0);
+  opacity: 0;
+  transition: opacity 0.2s, height 0.2s var(--yl-ease), margin 0.2s var(--yl-ease);
+}
+.yl-progress i {
+  display: block;
+  background: linear-gradient(90deg, var(--yl-accent2), var(--yl-accent));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--yl-accent) 45%, transparent);
+  transform-origin: 0 50%;
+  transform: scaleX(0);
+}
+.yl-progress:hover,
+.yl-progress.is-drag {
+  --h: 8px;
+}
+.yl-progress:hover u {
+  opacity: 1;
+}
+.yl-progress b {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  margin: -8px 0 0 -8px;
+  border-radius: 50%;
+  background: var(--yl-ink);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--yl-accent) 30%, transparent), 0 2px 10px rgba(0, 0, 0, 0.45);
+  opacity: 0;
+  scale: 0.5;
+  transition: opacity 0.2s, scale 0.25s var(--yl-ease);
+}
+.yl-progress:hover b,
+.yl-progress.is-drag b {
+  opacity: 1;
+  scale: 1;
+}
+.yl-tip {
+  position: absolute;
+  bottom: 100%;
+  margin-bottom: 6px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--yl-on-ink);
+  background: var(--yl-ink);
+  transform: translateX(-50%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+.yl-progress:hover .yl-tip,
+.yl-progress.is-drag .yl-tip {
+  opacity: 1;
+}
+.yl-source {
+  min-height: 15px;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  opacity: 0.7;
+}
+
+/* кнопки в шапке — стеклянные круги */
+.yl-btn {
+  border: 0;
+  background: color-mix(in srgb, var(--yl-base) 45%, transparent);
+  box-shadow: inset 0 0 0 1px var(--yl-hairline), 0 8px 24px -10px rgba(0, 0, 0, 0.5);
+  transition: background 0.2s, transform 0.25s var(--yl-ease), box-shadow 0.25s, color 0.2s;
+}
+.yl-btn:hover {
+  background: color-mix(in srgb, var(--yl-ink) 14%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--yl-ink) 22%, transparent), 0 10px 28px -10px color-mix(in srgb, var(--yl-accent) 60%, transparent);
+  transform: translateY(-1px);
+}
+.yl-btn.is-on {
+  color: var(--yl-accent);
+  background: color-mix(in srgb, var(--yl-accent) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--yl-accent) 45%, transparent);
+}
+.yl-btn:active {
+  transform: scale(0.9);
+}
+
+/* ---------------- панель настроек ---------------- */
+.yl-panel {
+  position: absolute;
+  z-index: 4;
+  top: 80px;
+  right: 32px;
+  width: 316px;
+  max-height: calc(100% - 112px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 18px 18px;
+  border-radius: 22px;
+  background: var(--yl-surface);
+  backdrop-filter: blur(32px) saturate(1.5);
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.6), inset 0 0 0 1px var(--yl-hairline);
+  font-size: 14px;
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+  transform-origin: top right;
+  transition: opacity 0.25s, transform 0.35s var(--yl-ease);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--yl-ink) 25%, transparent) transparent;
+}
+.yl-panel.is-open {
+  opacity: 1;
+  transform: none;
+}
+.yl-panel:not(.is-open) {
+  pointer-events: none;
+}
+.yl-group {
+  padding: 14px 0 4px;
+}
+.yl-group + .yl-group {
+  border-top: 1px solid var(--yl-hairline);
+}
+.yl-group-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--yl-ink);
+}
+.yl-chips {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+.yl-chip {
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 11px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--yl-ink);
+  background: color-mix(in srgb, var(--yl-ink) 8%, transparent);
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, transform 0.2s var(--yl-ease);
+}
+.yl-chip:hover {
+  background: color-mix(in srgb, var(--yl-ink) 15%, transparent);
+}
+.yl-chip:active {
+  transform: scale(0.95);
+}
+.yl-chip.is-on {
+  font-weight: 700;
+  color: var(--yl-on-ink);
+  background: var(--yl-ink);
+}
+.yl-chip svg {
+  width: 16px;
+  height: 16px;
+  vertical-align: -3px;
+}
+.yl-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.yl-row output {
+  min-width: 52px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--yl-soft);
+}
+.yl-row .yl-chip {
+  flex: 1;
+}
+.yl-row .yl-offset {
+  flex: 1.2;
+  text-align: center;
+  color: var(--yl-ink);
+}
+.yl-range {
+  flex: 1;
+  height: 24px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.yl-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--yl-accent) var(--fill, 50%), color-mix(in srgb, var(--yl-ink) 18%, transparent) var(--fill, 50%));
+}
+.yl-range::-webkit-slider-thumb {
+  width: 16px;
+  height: 16px;
+  margin-top: -6px;
+  border-radius: 50%;
+  background: var(--yl-ink);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  -webkit-appearance: none;
+  transition: scale 0.2s var(--yl-ease);
+}
+.yl-range:active::-webkit-slider-thumb {
+  scale: 1.2;
+}
+.yl-switch {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+  cursor: pointer;
+}
+.yl-switch input {
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  margin: 0;
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--yl-ink) 18%, transparent);
+  cursor: pointer;
+  transition: background 0.25s;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.yl-switch input::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--yl-ink);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  transition: translate 0.3s var(--yl-ease);
+}
+.yl-switch input:checked {
+  background: var(--yl-accent);
+}
+.yl-switch input:checked::after {
+  translate: 16px 0;
+  background: var(--yl-on-ink);
+}
+.yl-audio-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--yl-soft);
+  background: color-mix(in srgb, var(--yl-ink) 6%, transparent);
+}
+.yl-audio-status::before {
+  content: '';
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--yl-ink) 35%, transparent);
+}
+.yl-audio-status.is-ok::before {
+  background: var(--yl-accent);
+  box-shadow: 0 0 6px var(--yl-accent);
+}
+
+/* ---------------- кнопка открытия ---------------- */
+.yl-fab {
+  position: fixed;
+  z-index: 2147482999;
+  right: 22px;
+  bottom: 150px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 16px 0 12px;
+  border: 0;
+  border-radius: 999px;
+  font: 700 14px/1 'YS Text', Inter, system-ui, sans-serif;
+  color: #fff;
+  background: rgba(30, 30, 36, 0.72);
+  backdrop-filter: blur(24px) saturate(1.5);
+  box-shadow: 0 10px 30px -6px rgba(0, 0, 0, 0.5), inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(10px) scale(0.96);
+  pointer-events: none;
+  transition: opacity 0.3s, transform 0.4s cubic-bezier(0.22, 1, 0.36, 1), background 0.2s;
+}
+.yl-fab.is-visible {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+}
+.yl-fab:hover {
+  background: rgba(46, 46, 54, 0.85);
+}
+.yl-fab:active {
+  transform: scale(0.95);
+}
+.yl-fab:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 3px;
+}
+.yl-fab svg {
+  width: 18px;
+  height: 18px;
+}
+.yl-fab .yl-badge {
+  display: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--yl-fab-accent, #ffcc4d);
+  box-shadow: 0 0 10px var(--yl-fab-accent, #ffcc4d);
+}
+.yl-fab.has-synced .yl-badge {
+  display: block;
+}
+
+/* ---------------- узкие и низкие окна ---------------- */
+@media (max-width: 760px) {
+  .yl-head {
+    padding: 16px 18px;
+  }
+  .yl-lines {
+    padding: 0 22px;
+  }
+  .yl-root {
+    --yl-line-size: min(var(--yl-size), 7vw);
+  }
+  .yl-panel {
+    right: 12px;
+    left: 12px;
+    width: auto;
+    top: 72px;
+  }
+  .yl-controls {
+    gap: 12px;
+  }
+}
+@media (max-height: 560px) {
+  .yl-stage,
+  .yl-status {
+    bottom: 150px;
+  }
+  .yl-ctl-main {
+    width: 48px;
+    height: 48px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .yl-bg-layer,
+  .yl-loader i {
+    animation: none !important;
+  }
+  .yl-bg,
+  .yl-side-cover,
+  .yl-ctl-main {
+    transform: none !important;
+  }
+  .yl-lines.is-entering .yl-line {
+    animation: none;
+  }
+}
+
+/* ---------------- нет текста: обложка по центру ---------------- */
+.yl-root.no-lyrics .yl-side {
+  display: block;
+  right: 50%;
+  width: min(44vh, 36vw, 460px);
+  transform: translate(50%, -62%);
+}
+.yl-root.no-lyrics .yl-head .yl-cover,
+.yl-root.no-lyrics .yl-head .yl-meta {
+  visibility: hidden;
+}
+.yl-root.no-lyrics .yl-stage {
+  opacity: 0;
+}
+/* статус — компактной плашкой над управлением, а не заголовком на полэкрана */
+.yl-root.no-lyrics .yl-status {
+  inset: auto 0 172px;
+  left: 0;
+  right: 0;
+  place-items: end center;
+}
+.yl-root.no-lyrics .yl-status > div {
+  display: flex;
+  align-items: center;
+  padding: 6px 6px 6px 18px;
+  border-radius: 999px;
+  background: var(--yl-surface);
+  box-shadow: inset 0 0 0 1px var(--yl-hairline);
+}
+.yl-root.no-lyrics .yl-status-icon,
+.yl-root.no-lyrics .yl-status-text {
+  display: none;
+}
+.yl-root.no-lyrics .yl-status-title {
+  font-family: var(--yl-font);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--yl-soft);
+  padding-right: 12px;
+}
+.yl-root.no-lyrics .yl-status-btn {
+  margin: 0;
+  height: 32px;
+  padding: 0 14px;
+  font-size: 13px;
+  color: var(--yl-ink);
+  background: color-mix(in srgb, var(--yl-ink) 14%, transparent);
+}
+
+/* ---------------- настройки вида ---------------- */
+.yl-line {
+  font-weight: var(--yl-weight, 800);
+}
+.align-center .yl-lines {
+  text-align: center;
+}
+.align-center .yl-line {
+  margin-left: auto;
+  margin-right: auto;
+  transform-origin: 50% 50%;
+}
+.align-center .yl-interlude {
+  justify-content: center;
+}
+.yl-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.yl-swatch {
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--c);
+  cursor: pointer;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+  transition: transform 0.2s var(--yl-ease), box-shadow 0.2s;
+}
+.yl-swatch:hover {
+  transform: scale(1.1);
+}
+.yl-swatch.is-on {
+  box-shadow: 0 0 0 2px var(--yl-base-deep), 0 0 0 4px var(--yl-ink);
+}
+.yl-swatch[data-accent='auto'] {
+  background: conic-gradient(#ff5fa2, #ffb347, #4fe0b0, #5ab8ff, #a78bfa, #ff5fa2);
+}
+.yl-sub {
+  margin: 10px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--yl-soft);
+}
+.yl-group .yl-chips + .yl-sub,
+.yl-group .yl-row + .yl-sub {
+  margin-top: 14px;
+}
+/* шрифт текста песни — из настроек */
+.yl-lines,
+.yl-side-title {
+  font-family: var(--yl-lyrics-font, 'YL Text'), var(--yl-font);
+}
+.yl-fonts .yl-chip {
+  font-size: 15px;
+  font-weight: 700;
+}

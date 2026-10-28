@@ -1,0 +1,23 @@
+{
+  "name": "ym-lyrics",
+  "version": "1.7.1",
+  "private": true,
+  "description": "Синхронные тексты песен с анимацией слов для десктопной Яндекс Музыки",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "test": "node --test test/*.test.js",
+    "install-mod": "node build.mjs && node patcher/patch.mjs install",
+    "uninstall-mod": "node patcher/patch.mjs restore",
+    "release": "node scripts/release.mjs"
+  },
+  "devDependencies": {
+    "@electron/asar": "^4.3.1",
+    "esbuild": "^0.28.2"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kryjkaqq/ym-lyrics"
+  }
+}
